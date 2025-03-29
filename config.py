@@ -1,50 +1,44 @@
 # config.py
 import os
 
-# --- Core Paths ---
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-VIDEO_DIR = os.path.join(BASE_DIR, 'videos')
-MODEL_DIR = os.path.join(BASE_DIR, 'models')
-OUTPUT_DIR = os.path.join(BASE_DIR, 'output')
+# --- Project Root (calculated) ---
+# Assuming config.py is in the root directory
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 
-# Ensure output directory exists
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+# --- Paths ---
+VIDEO_PATH = os.path.join(PROJECT_ROOT, '/Users/temogiorgadze/Documents/FluxGaming/CV_slots/Data/Videos/Sequence 01.mp4') # Path to your video file
+# video_path = 0 # Use 0 for default webcam
+# === Logging and Output ===
+# OUTPUT_CSV_FILE = "game_log.csv"      # Path to save the game log CSV file
+OUTPUT_DIR = "Output/"              # Directory to save the timestamped game log CSV files
+MODEL_PATH = os.path.join(PROJECT_ROOT, 'models/stage_classifier_model_5class.keras')
+MODEL_LABELS_PATH = os.path.join(PROJECT_ROOT, 'models/stage_class_names_5class.txt')
+# Tesseract executable path (Uncomment and modify if needed, otherwise it relies on PATH)
+# TESSERACT_CMD = r'C:\Program Files\Tesseract-OCR\tesseract.exe' # Example for Windows
+TESSERACT_CMD = None # Set to None if Tesseract is in your system PATH
 
-# --- Tesseract Configuration ---
-# Uncomment and modify IF TESSERACT IS NOT IN YOUR SYSTEM PATH
-# TESSERACT_CMD = r'C:\Program Files\Tesseract-OCR\tesseract.exe' # Windows example
-TESSERACT_CMD = None # Set to None if it's in PATH
-TESSERACT_CONFIG = r'--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789-'
+# Remove path for round digit templates
+# ROUND_TEMPLATE_DIR = os.path.join(PROJECT_ROOT, 'assets/digit_templates/round/')
+# TODO: Add BALANCE_TEMPLATE_DIR when ready
 
-# --- Video Source ---
-VIDEO_FILENAME = '/Users/temogiorgadze/Documents/FluxGaming/CV_slots/Data/Videos/Sequence 01.mp4'
-VIDEO_PATH = os.path.join(VIDEO_DIR, VIDEO_FILENAME)
-# VIDEO_PATH = 0 # Use 0 for the default webcam
+# --- Region of Interest (ROI) coordinates (x, y, width, height) ---
+# Define ROIs relative to the video frame dimensions
+# Format: (x, y, width, height)
+BALANCE_ROI = (98, 1753, 130, 52)
+ROUND_ROI   = (1764, 1660, 78, 46) 
+STAGES_AREA_ROI = (921, 1473, 1175, 190)
+# --- OCR Configuration ---
+# Tesseract config string (adjust for better accuracy)
+# --psm 7: Treat the image as a single text line
+# --psm 6: Assume a single uniform block of text
+TESSERACT_CONFIG = r'--oem 3 --psm 7 -c tessedit_char_whitelist=0123456789-'
 
-# --- ROIs - Region of Interest Coordinates (x, y, width, height) ---
-# Set specific ROIs to None to select them interactively on the first run.
-BALANCE_ROI = (98, 1753, 130, 52)   # Example: ROI for balance number OCR
-ROUND_ROI = (1764, 1660, 78, 46)    # Example: ROI for round number OCR
-STAGES_AREA_ROI = (921, 1473, 1175, 190) # ROI covering ALL multipliers (x1 to x32)
-# STAGES_AREA_ROI = None # Set to None to select interactively
+# --- Stability Control (Number of consecutive frames for confirmation) ---
+CONFIRMATION_FRAMES_OCR = 2 # For Round/Balance values
+CONFIRMATION_FRAMES_STAGE = 3 # For Stage changes
 
-# --- Output File ---
-OUTPUT_CSV_FILENAME = 'game_log_data_ml.csv'
-OUTPUT_CSV_FILE = os.path.join(OUTPUT_DIR, OUTPUT_CSV_FILENAME)
-
-# --- Stability Control ---
-CONFIRMATION_FRAMES_OCR = 3   # For balance and round number stability
-CONFIRMATION_FRAMES_STAGE = 3 # For ML stage detection stability
-
-# --- Stage Detection Configuration (ML) ---
-MODEL_FILENAME = 'stage_classifier_model_5class.keras'
-CLASS_NAMES_FILENAME = 'stage_class_names_5class.txt'
-MODEL_PATH = os.path.join(MODEL_DIR, MODEL_FILENAME)
-CLASS_NAMES_PATH = os.path.join(MODEL_DIR, CLASS_NAMES_FILENAME)
-
-# --- Define ALL possible stages, including the default one ---
-# These are used for logic/display, not directly by the model prediction index
-ALL_POSSIBLE_STAGES = ["x1", "x2", "x4", "x8", "x16", "x32"]
+# --- Stage Detection (ML Model) ---
+# Default stage if ML prediction confidence is below threshold
 DEFAULT_STAGE = "x32" # The stage to assign if confidence is low for known classes
 
 # --- Model Input Shape (MUST match training script) ---
@@ -67,5 +61,5 @@ USE_PROCESSING_THREAD = True
 SHOW_DEBUG_WINDOWS = True # Show individual ROI processing steps
 DISPLAY_WINDOW_NAME = "Video Feed"
 BALANCE_WINDOW_NAME = "Balance OCR Input"
-ROUND_WINDOW_NAME = "Round OCR Input"
+ROUND_WINDOW_NAME = "Round Input"
 STAGE_WINDOW_NAME = "Stages Area Input (ML)"

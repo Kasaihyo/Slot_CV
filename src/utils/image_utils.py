@@ -4,6 +4,7 @@ import numpy as np
 import pytesseract
 import re
 import config
+import os
 
 def preprocess_ocr(roi_frame):
     """Basic preprocessing for Tesseract OCR."""
@@ -26,7 +27,6 @@ def clean_ocr_text(raw_text, allowed_chars='0123456789-'):
     pattern = f'[^{re.escape(allowed_chars)}]+' # Create regex pattern dynamically
     cleaned = re.sub(pattern, '', raw_text)
     return cleaned.strip()
-
 
 def preprocess_image_for_model(img_roi, target_height, target_width):
     """Resizes an image ROI for model prediction, keeping color."""

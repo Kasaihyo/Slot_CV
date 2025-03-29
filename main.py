@@ -77,7 +77,7 @@ def main():
              print(f"Warning: Could not set Tesseract command path from config: {e}")
 
     # Load ML Model and Class Names
-    model, trained_class_names = load_model_and_classes(config.MODEL_PATH, config.CLASS_NAMES_PATH)
+    model, trained_class_names = load_model_and_classes(config.MODEL_PATH, config.MODEL_LABELS_PATH)
 
     # --- Video Source and ROI Setup ---
     print(f"INFO: Opening video source for details: {config.VIDEO_PATH}")
@@ -345,7 +345,20 @@ def main():
         print("INFO: Display windows closed.")
 
         # --- Save Data Log ---
-        log_manager.save_log_to_csv(data_log, config.OUTPUT_CSV_FILE)
+        if data_log:
+            try:
+                # Ensure output directory exists
+                os.makedirs(config.OUTPUT_DIR, exist_ok=True)
+                # Generate timestamped filename
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                output_filename = f"game_log_{timestamp}.csv"
+                full_output_path = os.path.join(config.OUTPUT_DIR, output_filename)
+                
+                log_manager.save_log_to_csv(data_log, full_output_path)
+            except Exception as e:
+                print(f"ERROR: Failed to save log file: {e}")
+        else:
+            print("INFO: No log data generated to save.")
 
         print("\nINFO: Script finished.")
 

@@ -75,19 +75,23 @@ class FrameProcessor(threading.Thread):
             result = {'frame_num': frame_num, 'skipped': False, 'display_frame': frame.copy()}
 
             # === 1. OCR Processing ===
-            # Balance
+            # Balance (still using OCR)
             balance_roi_frame = self._extract_roi(frame, self.config['balance_roi'])
             bal_processed_img, bal_raw_text = preprocess_ocr(balance_roi_frame)
-            cleaned_balance = clean_ocr_text(bal_raw_text, '0123456789-')
+            cleaned_balance = clean_ocr_text(bal_raw_text, '0123456789-') # Use standard cleaning
             result['cleaned_balance'] = cleaned_balance
             result['balance_processed_img'] = bal_processed_img
 
-            # Round
+            # Round (Reverting to OCR)
+            # Extract ROI
             round_roi_frame = self._extract_roi(frame, self.config['round_roi'])
+            # Preprocess and perform OCR
             rnd_processed_img, rnd_raw_text = preprocess_ocr(round_roi_frame)
+            # Clean the OCR result
             cleaned_round = clean_ocr_text(rnd_raw_text, '0123456789-')
+
             result['cleaned_round'] = cleaned_round
-            result['round_processed_img'] = rnd_processed_img
+            result['round_processed_img'] = rnd_processed_img # Store the preprocessed image for display
 
             # === 2. Stage Detection (ML) ===
             detected_stage = None
