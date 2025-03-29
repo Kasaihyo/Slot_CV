@@ -1,4 +1,4 @@
-# Game Analyzer
+# Slot Analyzer
 
 ## Description
 
