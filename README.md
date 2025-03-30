@@ -8,6 +8,10 @@ This project analyzes video footage from a game (presumably a slot or casino-sty
 *   **Player Balance:** Tracking the player's balance using EasyOCR.
 *   **Game Stage/Multiplier:** Classifying the current game stage or multiplier using a trained CNN model.
 *   **Logging:** Recording detected changes in round, stage, and balance to a CSV file for later analysis.
+*   **Symbol Detection (YOLOv11):** Detects symbols using a YOLOv11 model (`config.YOLO_MODEL_PATH`) across the entire frame.
+*   **Stable Grid Detection:** Implements logic to ensure symbol counts are logged only when the game grid is full (`config.STABLE_GRID_SIZE`) and visually stable over several checks (`config.GRID_STABILITY_CHECKS`). Uses a lower confidence (`config.YOLO_PREDICT_CONF`) for finding the grid and a higher confidence (`config.YOLO_CONFIDENCE_THRESHOLD`) for the final counting.
+*   **Adaptive Frame Processing:** Reduces the frame processing interval (`config.GRID_SEARCH_FRAME_INTERVAL`) when actively searching for a stable grid (e.g., after a stage change).
+*   **Event-Based Logging:** Logs round changes, stage changes, and stable grid detections as separate events in the output CSV, ensuring symbol counts are associated with the correct frame.
 
 ## Features
 
@@ -18,7 +22,7 @@ This project analyzes video footage from a game (presumably a slot or casino-sty
 *   **State Tracking:** Maintains the current game state (round, balance, stage) and identifies significant changes, applying stability checks (`config.CONFIRMATION_FRAMES_STAGE`).
 *   **Multi-threaded Processing (Optional):** Can utilize separate threads (`config.USE_PROCESSING_THREAD`) for reading video frames and processing them (ML, OCR) to potentially improve performance on multi-core systems.
 *   **Configurable Parameters:** Most operational parameters (file paths, ROI coordinates, thresholds, etc.) are managed through the `config.py` file.
-*   **Output:** Displays the processed video feed with overlays showing detected information and ROIs. Saves a detailed log of round changes and outcomes to a timestamped CSV file in the `config.OUTPUT_DIR` directory. Optional debug windows show intermediate processing steps.
+*   **Output:** Displays the processed video feed with overlays showing detected information and ROIs. Saves a detailed log of events (round changes, stage changes, stable grids) to a timestamped CSV file in the `config.OUTPUT_DIR` directory. Optional debug windows show intermediate processing steps, including YOLO detections on stable grids.
 
 ## Dependencies
 
@@ -31,10 +35,12 @@ Ensure you have Python 3 installed. The required packages are listed in `require
 *   `tensorflow`: For loading and running the ML stage classification model.
 *   `numpy`: For numerical operations, especially with image data.
 *   `easyocr`: For Optical Character Recognition (OCR) to read balance and round numbers.
+*   `ultralytics`: For loading and running the YOLOv11 symbol detection model.
 
 ### External Software:
 
 *   **EasyOCR Models:** EasyOCR automatically downloads required language models (e.g., for English) on first use. Ensure you have an internet connection when running the script for the first time after installing `easyocr`.
+*   **YOLO Models:** The Ultralytics library might download specific components if needed, depending on the model format and environment.
 
 ## Installation
 
@@ -70,11 +76,21 @@ Before running, carefully review and edit the `config.py` file:
     *   `PREDICTION_CONFIDENCE_THRESHOLD`: Minimum confidence level (0.0 to 1.0) required from the ML model to accept its prediction.
     *   `DEFAULT_STAGE`: The stage name assigned if the ML model's confidence is below the threshold.
     *   `CONFIRMATION_FRAMES_OCR`, `CONFIRMATION_FRAMES_STAGE`: Number of consecutive frames a value (Round/Balance or Stage) must remain stable before being accepted as confirmed.
-    *   `PROCESS_EVERY_N_FRAMES`: Set to > 1 to skip processing on some frames (e.g., process every 10th frame) for potential performance gains, especially in single-threaded mode.
-4.  **Execution Mode:**
+    *   `PROCESS_EVERY_N_FRAMES`: Set to > 1 to skip processing on some frames (e.g., process every 10th frame) for potential performance gains, especially in single-threaded mode during normal operation.
+4.  **YOLO Symbol Detection Parameters:**
+    *   `YOLO_MODEL_PATH`: Path to the trained YOLOv11 model (`.pt` file).
+    *   `YOLO_CLASS_NAMES`: **Crucially, this list must match the order used for logging and expected in the output CSV.** It might differ from the model's internal training order.
+    *   `YOLO_CONFIDENCE_THRESHOLD`: Minimum confidence (0.0 to 1.0) required for a detected symbol to be *counted* during the final stable grid count.
+    *   `YOLO_PREDICT_CONF`: Lower confidence threshold (0.0 to 1.0) used *only* for initially detecting boxes to determine if the grid *might* be full. This helps find potential stable frames even if some symbols have low confidence.
+    *   `STABLE_GRID_SIZE`: The exact number of symbols expected when the grid is full and stable (e.g., 25).
+    *   `GRID_STABILITY_CHECKS`: How many consecutive frames (processed at the search interval) must show the `STABLE_GRID_SIZE` number of boxes before the grid is considered stable.
+    *   `GRID_SEARCH_FRAME_INTERVAL`: Process every Nth frame when actively searching for a stable grid (state `SEARCHING` or `CONFIRMING`), typically lower than `PROCESS_EVERY_N_FRAMES`.
+5.  **Execution Mode:**
     *   `USE_PROCESSING_THREAD`: Set to `True` to use multi-threading, `False` for single-threaded operation.
-5.  **Display:**
+6.  **Display:**
     *   `DISPLAY_WINDOW_NAME`: Name for the main output window.
+    *   `ROUND_WINDOW_NAME`, `STAGE_WINDOW_NAME`: Names for the OCR/Stage ROI debug windows.
+    *   `STABLE_GRID_WINDOW_NAME`: Name for the debug window showing the full frame with YOLO bounding boxes drawn when a stable grid is detected.
     *   `SHOW_DEBUG_WINDOWS`: Set to `True` to show separate windows displaying the processed ROI images (Balance, Round, Stage).
 
 ## Usage
@@ -88,10 +104,10 @@ Before running, carefully review and edit the `config.py` file:
 4.  The script will start processing the video specified in `config.py`.
 5.  If any ROIs were set to `None`, interactive selection windows will appear first. Draw the rectangles and press Enter/Space.
 6.  A display window (`config.DISPLAY_WINDOW_NAME`) will show the video feed with detected information (Round, Balance, Stage) and ROI overlays.
-7.  If `SHOW_DEBUG_WINDOWS` is `True`, additional windows will show the isolated ROIs being processed.
-8.  Console output will provide information about startup, round/stage changes, and potential errors.
+7.  If `SHOW_DEBUG_WINDOWS` is `True`, additional windows will show the isolated ROIs being processed, **and a window (`config.STABLE_GRID_WINDOW_NAME`) will show the frame with YOLO detections whenever a stable grid is confirmed.**
+8.  Console output will provide information about startup, round/stage changes, stable grid confirmations, and potential errors.
 9.  Press 'q' in the display window to gracefully shut down the application.
-10. Upon completion or shutdown, the analysis log will be saved to a timestamped file in `config.OUTPUT_DIR`.
+10. Upon completion or shutdown, the analysis log will be saved to a timestamped file in `config.OUTPUT_DIR`. This CSV file contains separate rows for different event types (`EventType` column: `ROUND_CHANGE`, `STAGE_CHANGE`, `STABLE_GRID`). Symbol counts will only be populated on `STABLE_GRID` rows.
 
 ## Project Structure
 
@@ -121,11 +137,14 @@ Before running, carefully review and edit the `config.py` file:
 
 ## TODO
 
-*   Fix the balance tracking/extraction.
-*   Implement symbol counting/detection:
-    *   Train classification model (9 symbols).
-    *   Map the boxes for detection.
-    *   Find the still frame within animations for reliable detection.
+*   ~~Fix the balance tracking/extraction.~~ (Seems fixed)
+*   ~~Implement symbol counting/detection:~~ (Implemented)
+    *   ~~Train classification model (9 symbols).~~ (Assumed done - YOLO model provided)
+    *   ~~Map the boxes for detection.~~ (Implemented via YOLO)
+    *   ~~Find the still frame within animations for reliable detection.~~ (Implemented via stable grid logic)
+*   Consider adding configuration for YOLO drawing (e.g., different colors for boxes below counting threshold).
+*   Investigate performance impact of full-frame YOLO detection.
+*   Refine single-threaded processing logic in `main.py` if needed.
 
 ## Contributing
 
