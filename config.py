@@ -18,6 +18,20 @@ MODEL_LABELS_PATH = os.path.join(PROJECT_ROOT, 'models/stage_class_names_5class.
 # ROUND_TEMPLATE_DIR = os.path.join(PROJECT_ROOT, 'assets/digit_templates/round/')
 # TODO: Add BALANCE_TEMPLATE_DIR when ready
 
+# --- YOLO Symbol Detection ---
+YOLO_MODEL_PATH = "/Users/temogiorgadze/Documents/FluxGaming/CV_slots/models/symbol_yolo.pt" # Path to your YOLO model
+YOLO_CLASS_NAMES = [
+    "Cyan Skull", "Orange Skull", "Green Skull", "Blue Skull", "Pink Skull",
+    "Golden Hat Skull", "Wild Symbols", "Explosive Wild Symbols", "Scatter Symbols"
+]
+YOLO_CONFIDENCE_THRESHOLD = 0.7 # Minimum confidence for a symbol detection to be COUNTED
+YOLO_PREDICT_CONF = 0.1         # Lower confidence for initial box detection (helps find full grid)
+STABLE_GRID_SIZE = 25           # Expected number of symbols in a full grid
+GRID_STABILITY_CHECKS = 3       # Number of consecutive checks needed for stable grid
+GRID_SEARCH_FRAME_INTERVAL = 2  # Process every N frames when searching for stable grid
+# We will use STAGES_AREA_ROI for symbol detection by default. Define a specific YOLO_ROI if needed.
+# YOLO_ROI = (x, y, w, h) # Optional: Define a separate ROI for YOLO if different from STAGES_AREA_ROI
+
 # --- Region of Interest (ROI) coordinates (x, y, width, height) ---
 # Define ROIs relative to the video frame dimensions
 # Format: (x, y, width, height)
@@ -37,13 +51,13 @@ DEFAULT_STAGE = "x32" # The stage to assign if confidence is low for known class
 # --- Model Input Shape (MUST match training script) ---
 MODEL_IMG_HEIGHT = 86
 MODEL_IMG_WIDTH = 493
-PREDICTION_CONFIDENCE_THRESHOLD = 0.80 # 80% confidence required
+PREDICTION_CONFIDENCE_THRESHOLD = 0.65 # 80% confidence required
 
 # --- Performance ---
-PROCESS_EVERY_N_FRAMES = 10
+PROCESS_EVERY_N_FRAMES = 1
 
 # --- Balance Correction ---
-DECIMAL_CORRECTION = 100 # Divide OCR balance by this value (e.g., 100)
+DECIMAL_CORRECTION = 1 # Divide OCR balance by this value (e.g., 100)
 # Set to 1 or None if no correction is needed
 
 # --- Threading Configuration ---
@@ -56,3 +70,4 @@ DISPLAY_WINDOW_NAME = "Video Feed"
 BALANCE_WINDOW_NAME = "Balance OCR Input"
 ROUND_WINDOW_NAME = "Round Input"
 STAGE_WINDOW_NAME = "Stages Area Input (ML)"
+STABLE_GRID_WINDOW_NAME = "Stable Grid Detection" # New window

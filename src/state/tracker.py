@@ -1,5 +1,6 @@
 # src/state/tracker.py
 import config # For confirmation frame counts, decimal correction etc.
+import datetime # Need for timestamp in log data
 
 class StabilityTracker:
     """Tracks a value over frames to confirm stability."""
@@ -111,7 +112,8 @@ class GameState:
         # --- Handle Confirmed Balance ---
         if balance_text_changed and confirmed_balance_text:
             try:
-                balance_value = int(confirmed_balance_text)
+                # Use float() to handle potential decimals from OCR
+                balance_value = float(confirmed_balance_text)
                 if config.DECIMAL_CORRECTION and config.DECIMAL_CORRECTION != 0:
                     self.last_confirmed_balance_numeric = balance_value / config.DECIMAL_CORRECTION
                 else:
@@ -155,7 +157,6 @@ class GameState:
              # but keeping it allows tracking win accumulation *during* a round if needed later.
              self.accumulated_win_in_round = self.last_confirmed_balance_numeric - self.last_round_start_balance
 
-
         return round_changed, stage_changed_mid_round
 
 
@@ -181,16 +182,19 @@ class GameState:
                      outcome = "BAL_ERR"
 
         # Data needed by the logger
-        return {
+        log_entry = {
             'frame_num': frame_num,
+            'timestamp': datetime.datetime.now().isoformat(), # Add timestamp
             'current_round': self.last_confirmed_round,
             'current_stage': self.last_confirmed_stage,
             'confirmed_balance_val': self.last_confirmed_balance_numeric,
             'raw_balance_text': self.balance_tracker.get_confirmed(),
             'balance_change_val': balance_change,
             'outcome_str': outcome,
-            'accumulated_win_val': self.accumulated_win_in_round # Log the win accumulated up to this point
+            'accumulated_win_val': self.accumulated_win_in_round, # Log the win accumulated up to this point
+            'EventType': 'ROUND_CHANGE' # Add event type
         }
+        return log_entry
 
     def get_log_data_stage_change(self, frame_num):
          """Prepares data for logging specifically for a mid-round stage change."""
@@ -198,16 +202,19 @@ class GameState:
          balance_change_val = 0.00
          outcome_str = "STAGE_CHANGE"
 
-         return {
+         log_entry = {
             'frame_num': frame_num,
+            'timestamp': datetime.datetime.now().isoformat(), # Add timestamp
             'current_round': self.last_confirmed_round, # The round it happened in
             'current_stage': self.last_confirmed_stage, # The *new* stage
             'confirmed_balance_val': self.last_confirmed_balance_numeric, # Current balance
             'raw_balance_text': self.balance_tracker.get_confirmed(),
             'balance_change_val': balance_change_val,
             'outcome_str': outcome_str,
-            'accumulated_win_val': self.accumulated_win_in_round # Log win accumulated *so far*
-        }
+            'accumulated_win_val': self.accumulated_win_in_round, # Log win accumulated *so far*
+            'EventType': 'STAGE_CHANGE' # Add event type
+         }
+         return log_entry
 
     def get_display_status(self):
         """Generates status strings for display overlay."""

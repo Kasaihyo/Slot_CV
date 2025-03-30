@@ -165,6 +165,7 @@ def main():
     latest_stage_img = None
     last_processed_frame_num = 0
     last_ml_pred_info = "" # Store last raw ML prediction details
+    latest_stable_grid_frame = None # To store the annotated frame
 
     try:
         while not stop_event.is_set():
@@ -226,6 +227,11 @@ def main():
                         latest_round_img = result_data.get('round_processed_img')
                         latest_stage_img = result_data.get('stages_area_frame')
 
+                    # --- Check for Stable Grid Frame ---
+                    if result_data.get('grid_event') == 'stable':
+                        latest_stable_grid_frame = result_data.get('annotated_stable_frame')
+                    # -----------------------------------
+
                     # Store raw ML prediction details for display
                     pred_cls = result_data.get('stage_known_cls')
                     pred_prob = result_data.get('stage_prob', 0.0)
@@ -241,17 +247,31 @@ def main():
                     round_changed, stage_changed_mid_round = game_state.update_from_result(result_data)
 
                     # --- Logging ---
+                    # Log stable grid event IF it occurred
+                    if result_data.get('grid_event') == 'stable':
+                        grid_log_data = log_manager.prepare_stable_grid_log(
+                            frame_num=frame_num,
+                            symbol_counts=result_data.get('symbol_counts', {}),
+                            total_symbols=result_data.get('total_symbols', 0),
+                            current_round=game_state.last_confirmed_round, # Add context
+                            current_stage=game_state.last_confirmed_stage  # Add context
+                        )
+                        log_manager.add_log_entry(data_log, grid_log_data)
+                        print(f"STABLE GRID >> F:{frame_num} Total:{grid_log_data['total_symbols']} R:'{grid_log_data['current_round']}' S:'{grid_log_data['current_stage']}'")
+
+                    # Log round change IF it occurred (separate from grid)
                     if round_changed:
                         log_data = game_state.get_log_data(frame_num)
-                        entry = log_manager.add_log_entry(data_log, **log_data)
+                        entry = log_manager.add_log_entry(data_log, log_data)
                         # Print confirmation
                         balance_print = f"{log_data['confirmed_balance_val']:.2f}" if log_data['confirmed_balance_val'] is not None else f"(RAW:{log_data['raw_balance_text']})"
                         print(f"ROUND CHANGE >> F:{frame_num} R:'{log_data['current_round']}' S:'{log_data['current_stage']}' "
                               f"B:{balance_print} Change:{log_data['outcome_str']} Accum:{log_data['accumulated_win_val']:.2f}")
 
+                    # Log stage change IF it occurred (separate from grid)
                     elif stage_changed_mid_round:
                          log_data = game_state.get_log_data_stage_change(frame_num)
-                         entry = log_manager.add_log_entry(data_log, **log_data)
+                         entry = log_manager.add_log_entry(data_log, log_data)
                          # Print confirmation
                          balance_print = f"{log_data['confirmed_balance_val']:.2f}" if log_data['confirmed_balance_val'] is not None else f"(RAW:{log_data['raw_balance_text']})"
                          print(f"STAGE CHANGE >> F:{frame_num} R:'{log_data['current_round']}' S:'{log_data['current_stage']}' "
@@ -295,6 +315,9 @@ def main():
                     if latest_balance_img is not None: cv2.imshow(config.BALANCE_WINDOW_NAME, latest_balance_img)
                     if latest_round_img is not None: cv2.imshow(config.ROUND_WINDOW_NAME, latest_round_img)
                     if latest_stage_img is not None: cv2.imshow(config.STAGE_WINDOW_NAME, latest_stage_img)
+                # Show the stable grid window if we have a frame
+                if latest_stable_grid_frame is not None:
+                    cv2.imshow(config.STABLE_GRID_WINDOW_NAME, latest_stable_grid_frame)
 
             # --- Exit Condition ---
             key = cv2.waitKey(1) & 0xFF # Wait minimally (1ms)

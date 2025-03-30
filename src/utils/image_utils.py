@@ -6,20 +6,18 @@ import config
 import easyocr
 import os
 
-# Initialize EasyOCR Reader globally (loads the model once)
-# You might want to specify GPU usage: easyocr.Reader(['en'], gpu=True)
-reader = easyocr.Reader(['en'])
-
-def preprocess_ocr(roi_frame):
+def preprocess_ocr(roi_frame, reader):
     """Basic preprocessing and OCR using EasyOCR."""
+    if reader is None:
+        print("Warning: EasyOCR reader not available, skipping OCR.")
+        gray = cv2.cvtColor(roi_frame, cv2.COLOR_BGR2GRAY) if roi_frame is not None and roi_frame.size > 0 else None
+        return gray, ""
     if roi_frame is None or roi_frame.size == 0:
         return None, "" # Return None for image, empty string for text
     try:
         gray = cv2.cvtColor(roi_frame, cv2.COLOR_BGR2GRAY)
         # Thresholding often not needed or detrimental for EasyOCR
-        # Perform OCR using EasyOCR
-        # detail=0 returns only the text strings
-        # paragraph=False might be better for single-line ROIs
+        # Perform OCR using the passed EasyOCR reader object
         results = reader.readtext(gray, detail=0, paragraph=False)
         raw_text = " ".join(results) # Join potential multiple detections
         
