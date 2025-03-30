@@ -10,7 +10,7 @@ import time
 from ..utils.image_utils import preprocess_ocr, clean_ocr_text, preprocess_image_for_model
 
 # Import config but avoid circular dependency if utils need config too
-import config # Need TESSERACT_CONFIG here
+# import config # Need TESSERACT_CONFIG here -- Remove this
 
 class FrameProcessor(threading.Thread):
     """Processes frames from a queue: performs OCR and ML prediction."""
@@ -23,15 +23,6 @@ class FrameProcessor(threading.Thread):
         self.model = model
         self.trained_class_names = trained_class_names
         self.daemon = True
-
-        # Ensure Tesseract config is set (if provided in main config)
-        if config.TESSERACT_CMD:
-             import pytesseract
-             try:
-                 pytesseract.pytesseract.tesseract_cmd = config.TESSERACT_CMD
-             except Exception as e:
-                  print(f"Warning: Could not set Tesseract command path in Processor: {e}")
-
 
     def _extract_roi(self, frame, roi_coords):
         """Safely extracts an ROI from the frame."""
@@ -141,16 +132,19 @@ class FrameProcessor(threading.Thread):
             processing_time = time.time() - start_time
             result['processing_time'] = processing_time # Add timing info if needed
 
-            try:
-                self.results_queue.put_nowait(result)
-            except queue.Full:
-                # This shouldn't happen often if main thread consumes quickly
-                print(f"Warning: Results queue full at frame {frame_num}. Dropping result.")
-                pass # Drop result if queue is full to avoid blocking processor
+            # Wait for space in the results queue, but check stop_event periodically
+            while not self.stop_event.is_set():
+                try:
+                    self.results_queue.put(result, block=True, timeout=0.5) # Wait up to 0.5s for space
+                    break # Exit loop if put was successful
+                except queue.Full:
+                    continue # Queue still full, check stop_event and try again
 
         # Signal end for main thread by putting None in results queue
-        try:
-             self.results_queue.put(None, block=True, timeout=1)
-        except queue.Full:
-             print("Warning: Results queue full when trying to signal processor end.")
+        # Ensure this happens even if the loop was broken by stop_event
+        if not self.stop_event.is_set(): # Check if stop was already set (e.g., by reader)
+            try:
+                 self.results_queue.put(None, block=True, timeout=1)
+            except queue.Full:
+                 print("Warning: Results queue full when trying to signal processor end.")
         print("INFO: FrameProcessor thread finished.")

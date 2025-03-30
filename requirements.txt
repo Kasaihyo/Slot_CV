@@ -1,5 +1,5 @@
 opencv-python
-pytesseract
 pandas
 tensorflow
 numpy
+easyocr

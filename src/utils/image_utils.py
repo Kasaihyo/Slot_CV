@@ -1,23 +1,32 @@
 # src/utils/image_utils.py
 import cv2
 import numpy as np
-import pytesseract
 import re
 import config
+import easyocr
 import os
 
+# Initialize EasyOCR Reader globally (loads the model once)
+# You might want to specify GPU usage: easyocr.Reader(['en'], gpu=True)
+reader = easyocr.Reader(['en'])
+
 def preprocess_ocr(roi_frame):
-    """Basic preprocessing for Tesseract OCR."""
+    """Basic preprocessing and OCR using EasyOCR."""
     if roi_frame is None or roi_frame.size == 0:
         return None, "" # Return None for image, empty string for text
     try:
         gray = cv2.cvtColor(roi_frame, cv2.COLOR_BGR2GRAY)
-        # Use THRESH_BINARY_INV for dark text on light background, or THRESH_BINARY for light on dark
-        # OTSU helps find a good threshold automatically
-        thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1]
-        return thresh, pytesseract.image_to_string(thresh, config=config.TESSERACT_CONFIG)
+        # Thresholding often not needed or detrimental for EasyOCR
+        # Perform OCR using EasyOCR
+        # detail=0 returns only the text strings
+        # paragraph=False might be better for single-line ROIs
+        results = reader.readtext(gray, detail=0, paragraph=False)
+        raw_text = " ".join(results) # Join potential multiple detections
+        
+        # Return the preprocessed (grayscale) image and the raw text
+        return gray, raw_text
     except Exception as e:
-        print(f"Warning: OCR preprocessing/execution failed: {e}")
+        print(f"Warning: EasyOCR preprocessing/execution failed: {e}")
         return None, "" # Return gracefully on error
 
 def clean_ocr_text(raw_text, allowed_chars='0123456789-'):

@@ -67,15 +67,6 @@ def main():
     # --- Initial Setup ---
     print("--- Game Analyzer Startup ---")
 
-    # Optional: Set Tesseract Path if specified in config
-    if config.TESSERACT_CMD:
-        import pytesseract
-        try:
-            pytesseract.pytesseract.tesseract_cmd = config.TESSERACT_CMD
-            print(f"INFO: Set Tesseract command path to: {config.TESSERACT_CMD}")
-        except Exception as e:
-             print(f"Warning: Could not set Tesseract command path from config: {e}")
-
     # Load ML Model and Class Names
     model, trained_class_names = load_model_and_classes(config.MODEL_PATH, config.MODEL_LABELS_PATH)
 
@@ -112,7 +103,6 @@ def main():
         'balance_roi': balance_roi,
         'round_roi': round_roi,
         'stages_area_roi': stages_area_roi,
-        # Tesseract config now handled within processor/utils based on main config
         'model_img_height': config.MODEL_IMG_HEIGHT,
         'model_img_width': config.MODEL_IMG_WIDTH,
         'prediction_confidence_threshold': config.PREDICTION_CONFIDENCE_THRESHOLD,
@@ -125,7 +115,10 @@ def main():
     game_state = GameState()
 
     frame_queue = queue.Queue(maxsize=config.FRAME_QUEUE_MAXSIZE)
-    results_queue = queue.Queue() # No max size for results (main thread must keep up)
+    # Limit the results queue size to prevent unbounded memory growth
+    results_queue_maxsize = config.FRAME_QUEUE_MAXSIZE * 2
+    results_queue = queue.Queue(maxsize=results_queue_maxsize)
+    print(f"INFO: Initialized results queue with maxsize={results_queue_maxsize}") # Added info log
     stop_event = threading.Event()
 
     reader_thread = None
