@@ -1,4 +1,4 @@
-# Slot Analyzer
+# Slot symbol counter with Computer Vision
 
 ## Description
 
@@ -46,8 +46,8 @@ Ensure you have Python 3 installed. The required packages are listed in `require
 
 1.  **Clone the Repository:**
     ```bash
-    git clone <your-repository-url>
-    cd <repository-directory>
+    git clone https://github.com/Kasaihyo/Slot_CV/
+    cd Slot_CV
     ```
 2.  **Create a Virtual Environment (Recommended):**
     ```bash
