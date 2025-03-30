@@ -254,6 +254,7 @@ class GameState:
             self._last_stable_grid_total = None
         # -----------------------------------------
 
+        # Prepare base log entry
         log_entry = {
             'frame_num': frame_num, # Frame num when the change was *confirmed*
             'timestamp': datetime.datetime.now().isoformat(), # Add timestamp
@@ -265,14 +266,21 @@ class GameState:
             'outcome_str': outcome,
             'accumulated_win_val': 0.0, # Reset for the new round log entry
             'EventType': 'ROUND_CHANGE',
-            'stable_grid_found': grid_found,
-            'stable_grid_frame_num': grid_frame,
-            'total_symbols': grid_total if grid_found else None # Use None if not found
         }
-        # Add individual symbol counts if found
-        if grid_found and grid_counts:
-             log_entry.update({f'symbol_{name.replace(" ", "_")}': count for name, count in grid_counts.items()})
-        # Else: Ensure symbol columns aren't added or have None/NaN for CSV consistency later
+
+        # --- Conditionally add grid data --- #
+        if grid_found:
+            # print(f"DEBUG: Including stable grid data (Frame: {grid_frame}) for ROUND CHANGE log (Frame: {frame_num})") # Optional debug
+            log_entry['stable_grid_found'] = True
+            log_entry['stable_grid_frame_num'] = grid_frame
+            log_entry['total_symbols'] = grid_total # Add total symbols
+            if grid_counts:
+                 log_entry.update({f'symbol_{name.replace(" ", "_")}': count for name, count in grid_counts.items()})
+            # Reset stored grid data only after successfully adding it
+            self._last_stable_grid_frame_num = None
+            self._last_stable_grid_counts = None
+            self._last_stable_grid_total = None
+        # --- Else: Grid keys are NOT added if grid_found is False initially --- #
 
         return log_entry
 
@@ -294,6 +302,7 @@ class GameState:
             self._last_stable_grid_total = None
          # -----------------------------------------
 
+         # Prepare base log entry
          log_entry = {
             'frame_num': frame_num, # Frame num when the change was *confirmed*
             'timestamp': datetime.datetime.now().isoformat(), # Add timestamp
@@ -305,13 +314,21 @@ class GameState:
             'outcome_str': outcome_str,
             'accumulated_win_val': self.accumulated_win_in_round, # Log win accumulated *so far* in the current round
             'EventType': 'STAGE_CHANGE', # Add event type
-            'stable_grid_found': grid_found,
-            'stable_grid_frame_num': grid_frame,
-            'total_symbols': grid_total if grid_found else None # Use None if not found
          }
-         # Add individual symbol counts if found
-         if grid_found and grid_counts:
-              log_entry.update({f'symbol_{name.replace(" ", "_")}': count for name, count in grid_counts.items()})
+
+         # --- Conditionally add grid data --- #
+         if grid_found:
+            # print(f"DEBUG: Including stable grid data (Frame: {grid_frame}) for STAGE CHANGE log (Frame: {frame_num})") # Optional debug
+            log_entry['stable_grid_found'] = True
+            log_entry['stable_grid_frame_num'] = grid_frame
+            log_entry['total_symbols'] = grid_total # Add total symbols
+            if grid_counts:
+                 log_entry.update({f'symbol_{name.replace(" ", "_")}': count for name, count in grid_counts.items()})
+            # Reset stored grid data only after successfully adding it
+            self._last_stable_grid_frame_num = None
+            self._last_stable_grid_counts = None
+            self._last_stable_grid_total = None
+         # --- Else: Grid keys are NOT added if grid_found is False initially --- #
 
          return log_entry
 

@@ -27,12 +27,12 @@ YOLO_CLASS_NAMES = [
 YOLO_CONFIDENCE_THRESHOLD = 0.7 # Minimum confidence for a symbol detection to be COUNTED
 YOLO_PREDICT_CONF = 0.1         # Lower confidence for initial box detection (helps find full grid)
 STABLE_GRID_SIZE = 25           # Expected number of symbols in a full grid
-GRID_STABILITY_CHECKS = 1       # Number of consecutive checks needed for stable grid
+GRID_STABILITY_CHECKS = 2       # Number of consecutive checks needed for stable grid
 GRID_SEARCH_FRAME_INTERVAL = 1  # Process every N frames when searching for stable grid
 
 # --- Grid Retry Mechanism (NEW) ---
 ENABLE_GRID_RETRY = True       # Enable backtracking/re-processing if grid missed on state change
-GRID_RETRY_ATTEMPTS = 2          # Max number of times to re-process frames for a missed grid
+GRID_RETRY_ATTEMPTS = 3          # Max number of times to re-process frames for a missed grid
 GRID_RETRY_FRAME_BUFFER_SIZE = 150 # Number of recent frames (or frame info) to keep for backtracking (adjust based on memory/round length)
 GRID_RETRY_PROCESS_ALL_FRAMES = True # If True, process every frame during retry, ignoring PROCESS_EVERY_N_FRAMES
 
@@ -48,8 +48,8 @@ STAGES_AREA_ROI = (921, 1473, 1175, 190)
 # REMOVED Tesseract related lines
 
 # --- Stability Control (Number of consecutive frames for confirmation) ---
-CONFIRMATION_FRAMES_OCR = 1 # For Round/Balance values
-CONFIRMATION_FRAMES_STAGE = 1 # For Stage changes
+CONFIRMATION_FRAMES_OCR = 2 # For Round/Balance values
+CONFIRMATION_FRAMES_STAGE = 3 # For Stage changes
 
 # --- Stage Detection (ML Model) ---
 # Default stage if ML prediction confidence is below threshold
@@ -61,14 +61,14 @@ MODEL_IMG_WIDTH = 493
 PREDICTION_CONFIDENCE_THRESHOLD = 0.65 # 80% confidence required
 
 # --- Performance ---
-PROCESS_EVERY_N_FRAMES = 2
+PROCESS_EVERY_N_FRAMES = 1
 
 # --- Balance Correction ---
 DECIMAL_CORRECTION = 1 # Divide OCR balance by this value (e.g., 100)
 # Set to 1 or None if no correction is needed
 
 # --- Threading Configuration ---
-FRAME_QUEUE_MAXSIZE = 20
+FRAME_QUEUE_MAXSIZE = 15
 USE_PROCESSING_THREAD = True
 
 # --- Display Configuration ---

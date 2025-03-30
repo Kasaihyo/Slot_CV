@@ -45,23 +45,26 @@ def save_log_to_csv(data_log, filename):
                   'stable_grid_found', 'stable_grid_frame_num',
                   'total_symbols'] + symbol_cols
 
-    # Reindex DataFrame - this ensures all columns exist, filling missing ones with NaN
-    # If a log entry was missing a specific symbol (e.g., due to older config), it gets NaN here.
+    # Reindex DataFrame - ensures all columns defined in cols_order exist
     df = df.reindex(columns=cols_order)
 
     # --- Fill NaN/None values in specific columns ---
-    # Fill symbol counts with 0 where grid wasn't found or symbol wasn't present
-    # Note: GameState now puts None for total_symbols if grid_found is False
-    fill_zeros = {'total_symbols': 0}
-    fill_zeros.update({col: 0 for col in symbol_cols})
-    df.fillna(fill_zeros, inplace=True)
 
-    # Fill NaN in stable_grid_frame_num with a placeholder (e.g., -1 or 0) if desired, or leave as NaN (becomes empty in CSV)
-    # df.fillna({'stable_grid_frame_num': -1}, inplace=True)
-
-    # Ensure boolean column is handled correctly (often becomes 1.0/0.0 or empty after reindex/fillna if original had Nones)
+    # Ensure boolean column defaults to False if missing or NaN
     if 'stable_grid_found' in df.columns:
          df['stable_grid_found'] = df['stable_grid_found'].fillna(False).astype(bool)
+    else: # Should not happen if col is in cols_order, but safety check
+         df['stable_grid_found'] = False
+
+    # Fill symbol counts and total with 0 where missing/NaN
+    # (This covers both entries where grid wasn't found AND entries created after retry failed)
+    fill_zeros = {'total_symbols': 0}
+    fill_zeros.update({col: 0 for col in symbol_cols if col in df.columns})
+    df.fillna(fill_zeros, inplace=True)
+
+    # Fill stable_grid_frame_num with 0 or -1 where missing/NaN (optional, otherwise becomes empty string in CSV)
+    df.fillna({'stable_grid_frame_num': 0}, inplace=True)
+
     # -----------------------------------------
 
     # Rename columns for better readability in CSV header
