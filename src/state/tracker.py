@@ -81,6 +81,21 @@ class GameState:
 
         self.last_round_start_balance = None # Balance at the start of the current round
         self.accumulated_win_in_round = 0.00
+        self.last_round_balance_change = 0.0 # Initialize variable to store the change of the *previous* round
+
+        # --- Frame Number Tracking for Retry --- (UPDATED)
+        self.current_round_start_frame = None
+        self.current_stage_start_frame = None
+        self.previous_round_start_frame = None # Added
+        self.previous_stage_start_frame = None # Added
+        self.last_event_frame_num = 0 # Track the frame number of the last processed event
+        # -----------------------------------------
+
+        # --- Attributes to store the last stable grid data ---
+        self._last_stable_grid_frame_num = None
+        self._last_stable_grid_counts = None
+        self._last_stable_grid_total = None
+        # ------------------------------------------------------
 
     def update_from_result(self, result_data):
         """
@@ -96,6 +111,18 @@ class GameState:
         """
         if result_data.get('skipped', True):
             return False, False # No data to process
+
+        # Store frame number for context
+        current_frame_num = result_data['frame_num']
+        self.last_event_frame_num = current_frame_num
+
+        # --- Check for stable grid BEFORE updating trackers ---
+        # Store the grid data if detected, overwriting any previous unlogged grid
+        if result_data.get('grid_event') == 'stable':
+            self._last_stable_grid_frame_num = result_data.get('frame_num')
+            self._last_stable_grid_counts = result_data.get('symbol_counts')
+            self._last_stable_grid_total = result_data.get('total_symbols')
+            # print(f"DEBUG: Stored stable grid data from frame {self._last_stable_grid_frame_num}") # Optional debug print
 
         # --- Update Trackers ---
         raw_balance = result_data.get('cleaned_balance')
@@ -122,98 +149,170 @@ class GameState:
                 print(f"Warning: Could not convert confirmed balance '{confirmed_balance_text}' to number.")
                 self.last_confirmed_balance_numeric = None # Invalidate numeric balance on error
 
-        # --- Handle Confirmed Stage ---
+        # --- Handle Confirmed Stage --- (Update start frame)
         if stage_changed and confirmed_stage:
-            self.previous_confirmed_stage = self.last_confirmed_stage # Store old before update
+            self.previous_confirmed_stage = self.last_confirmed_stage
             self.last_confirmed_stage = confirmed_stage
-            # Check if stage change happened *during* an ongoing round
+            self.previous_stage_start_frame = self.current_stage_start_frame # Store previous start frame
+            self.current_stage_start_frame = current_frame_num # Record start frame for new stage
             if round_was_ongoing and self.previous_confirmed_stage is not None:
                  stage_changed_mid_round = True
 
-        # --- Handle Confirmed Round Change ---
+        # --- Handle Confirmed Round Change --- (Update start frame)
         if round_changed and confirmed_round:
             self.last_confirmed_round = confirmed_round
-            self.previous_confirmed_stage = self.last_confirmed_stage # Sync previous stage at round start
+            self.previous_confirmed_stage = self.last_confirmed_stage
+            self.previous_round_start_frame = self.current_round_start_frame # Store previous start frame
+            self.current_round_start_frame = current_frame_num # Record start frame for new round
 
-            # Calculate balance change and update round start balance
+            # If stage didn't *just* change, align stage start frame with round start
+            if not stage_changed:
+                # We also need to store the previous stage start frame here if it aligns
+                self.previous_stage_start_frame = self.current_stage_start_frame
+                self.current_stage_start_frame = current_frame_num
+
+            # Calculate balance change over the round that just ended
+            balance_change = 0.0 # Default
             if self.last_confirmed_balance_numeric is not None:
                 if self.last_round_start_balance is not None:
                     balance_change = self.last_confirmed_balance_numeric - self.last_round_start_balance
-                    # Reset accumulated win *using* the change from the *previous* round
-                    self.accumulated_win_in_round = balance_change
+                    self.accumulated_win_in_round = 0.00 # Reset for the new round START
                 else:
                     # First round detected or balance error recovery
                     self.accumulated_win_in_round = 0.00
+                    balance_change = 0.0 # No change known for first round
                 # Set the start balance for the *new* round
                 self.last_round_start_balance = self.last_confirmed_balance_numeric
             else:
                 # Balance couldn't be read at round change
                 self.last_round_start_balance = None
                 self.accumulated_win_in_round = 0.00 # Reset on error
+                balance_change = 0.0
 
-        # If not a round change, but balance changed, update accumulated win
+            # Store the calculated balance change for the round that just ended
+            self.last_round_balance_change = balance_change
+
+        # If not a round change, but balance changed, update accumulated win FOR THE CURRENT round
         elif balance_text_changed and round_was_ongoing and self.last_round_start_balance is not None and self.last_confirmed_balance_numeric is not None:
-             # This condition might not be needed if we only log round changes,
-             # but keeping it allows tracking win accumulation *during* a round if needed later.
              self.accumulated_win_in_round = self.last_confirmed_balance_numeric - self.last_round_start_balance
+             # This accumulation happens *during* the round, potentially reflecting intermediate wins/losses before the next stage/round.
 
         return round_changed, stage_changed_mid_round
 
+    # --- Method to get frame range for previous state --- (UPDATED)
+    def get_previous_state_frame_range(self, event_type):
+        """Gets the start and end frame numbers for the state that just ended.
+
+        Args:
+            event_type (str): 'ROUND_CHANGE' or 'STAGE_CHANGE' indicating which state ended.
+
+        Returns:
+            tuple: (start_frame, end_frame) or (None, None) if info is unavailable.
+                   end_frame is the frame number where the change was detected.
+        """
+        end_frame = self.last_event_frame_num
+        start_frame = None
+
+        if event_type == 'ROUND_CHANGE':
+            start_frame = self.previous_round_start_frame # Use the stored previous value
+
+        elif event_type == 'STAGE_CHANGE':
+            start_frame = self.previous_stage_start_frame # Use the stored previous value
+
+        if start_frame is None or end_frame is None or start_frame >= end_frame:
+            print(f"Warning: Cannot determine valid frame range for previous {event_type}. Start: {start_frame}, End: {end_frame}")
+            return None, None
+
+        # Return start frame of the *previous* state and the frame the change was detected
+        # Add 1 to start_frame? If start_frame is when the *previous* state *started*, we want to process from the next frame onwards?
+        # Let's return the exact start frame for now. The processor can handle the range.
+        return start_frame, end_frame
+    # -----------------------------------------------------
 
     def get_log_data(self, frame_num):
-        """Prepares data for logging based on the current confirmed state."""
+        """Prepares data for logging a ROUND CHANGE, including associated stable grid data if found."""
         balance_change = 0.00
         outcome = "N/A"
 
-        if self.last_confirmed_balance_numeric is not None:
-            if self.last_round_start_balance is not None:
-                 # Calculate the change relative to the start of the *current* round being logged
-                 # Note: accumulated_win_in_round already holds this value based on the *previous* round's end
-                 balance_change = self.accumulated_win_in_round # Use the calculated accumulated win
-                 outcome = f"{balance_change:.2f}"
-            else:
-                 # First round or balance error
-                 balance_change = 0.00
-                 outcome = "START" # Or "BAL_ERR" if appropriate? Needs context from update logic
-                 # Check if balance is None but text exists
-                 if self.balance_tracker.get_confirmed() is not None:
-                     outcome = "START"
-                 else:
-                     outcome = "BAL_ERR"
+        # --- Use the stored balance change for the completed round ---
+        balance_change = self.last_round_balance_change
+        outcome = f"{balance_change:.2f}"
+        # Simple check: if the change is 0.0 AND the balance wasn't readable at start, flag as error maybe?
+        # Or rely on the user interpreting 0.0 change with None balance appropriately.
+        # Let's keep it simple for now.
 
-        # Data needed by the logger
+        # --- Retrieve and reset stable grid data ---
+        grid_found = self._last_stable_grid_counts is not None
+        grid_frame = self._last_stable_grid_frame_num
+        grid_total = self._last_stable_grid_total
+        grid_counts = self._last_stable_grid_counts
+
+        if grid_found:
+            # print(f"DEBUG: Retrieving stable grid data (Frame: {grid_frame}) for ROUND CHANGE log (Frame: {frame_num})") # Optional debug
+            self._last_stable_grid_frame_num = None
+            self._last_stable_grid_counts = None
+            self._last_stable_grid_total = None
+        # -----------------------------------------
+
         log_entry = {
-            'frame_num': frame_num,
+            'frame_num': frame_num, # Frame num when the change was *confirmed*
             'timestamp': datetime.datetime.now().isoformat(), # Add timestamp
-            'current_round': self.last_confirmed_round,
-            'current_stage': self.last_confirmed_stage,
-            'confirmed_balance_val': self.last_confirmed_balance_numeric,
+            'current_round': self.last_confirmed_round, # The new round number
+            'current_stage': self.last_confirmed_stage, # Stage at the start of the new round
+            'confirmed_balance_val': self.last_confirmed_balance_numeric, # Balance at the start of the new round
             'raw_balance_text': self.balance_tracker.get_confirmed(),
-            'balance_change_val': balance_change,
+            'balance_change_val': balance_change, # Use the stored change over the *previous* round
             'outcome_str': outcome,
-            'accumulated_win_val': self.accumulated_win_in_round, # Log the win accumulated up to this point
-            'EventType': 'ROUND_CHANGE' # Add event type
+            'accumulated_win_val': 0.0, # Reset for the new round log entry
+            'EventType': 'ROUND_CHANGE',
+            'stable_grid_found': grid_found,
+            'stable_grid_frame_num': grid_frame,
+            'total_symbols': grid_total if grid_found else None # Use None if not found
         }
+        # Add individual symbol counts if found
+        if grid_found and grid_counts:
+             log_entry.update({f'symbol_{name.replace(" ", "_")}': count for name, count in grid_counts.items()})
+        # Else: Ensure symbol columns aren't added or have None/NaN for CSV consistency later
+
         return log_entry
 
     def get_log_data_stage_change(self, frame_num):
-         """Prepares data for logging specifically for a mid-round stage change."""
-         # No balance change event for stage change itself
-         balance_change_val = 0.00
+         """Prepares data for logging a mid-round STAGE CHANGE, including associated stable grid data if found."""
+         balance_change_val = 0.00 # Stage changes don't have an associated balance change event in this logic
          outcome_str = "STAGE_CHANGE"
 
+         # --- Retrieve and reset stable grid data ---
+         grid_found = self._last_stable_grid_counts is not None
+         grid_frame = self._last_stable_grid_frame_num
+         grid_total = self._last_stable_grid_total
+         grid_counts = self._last_stable_grid_counts
+
+         if grid_found:
+            # print(f"DEBUG: Retrieving stable grid data (Frame: {grid_frame}) for STAGE CHANGE log (Frame: {frame_num})") # Optional debug
+            self._last_stable_grid_frame_num = None
+            self._last_stable_grid_counts = None
+            self._last_stable_grid_total = None
+         # -----------------------------------------
+
          log_entry = {
-            'frame_num': frame_num,
+            'frame_num': frame_num, # Frame num when the change was *confirmed*
             'timestamp': datetime.datetime.now().isoformat(), # Add timestamp
             'current_round': self.last_confirmed_round, # The round it happened in
             'current_stage': self.last_confirmed_stage, # The *new* stage
-            'confirmed_balance_val': self.last_confirmed_balance_numeric, # Current balance
+            'confirmed_balance_val': self.last_confirmed_balance_numeric, # Current balance when stage changed
             'raw_balance_text': self.balance_tracker.get_confirmed(),
             'balance_change_val': balance_change_val,
             'outcome_str': outcome_str,
-            'accumulated_win_val': self.accumulated_win_in_round, # Log win accumulated *so far*
-            'EventType': 'STAGE_CHANGE' # Add event type
+            'accumulated_win_val': self.accumulated_win_in_round, # Log win accumulated *so far* in the current round
+            'EventType': 'STAGE_CHANGE', # Add event type
+            'stable_grid_found': grid_found,
+            'stable_grid_frame_num': grid_frame,
+            'total_symbols': grid_total if grid_found else None # Use None if not found
          }
+         # Add individual symbol counts if found
+         if grid_found and grid_counts:
+              log_entry.update({f'symbol_{name.replace(" ", "_")}': count for name, count in grid_counts.items()})
+
          return log_entry
 
     def get_display_status(self):

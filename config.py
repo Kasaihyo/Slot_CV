@@ -27,15 +27,22 @@ YOLO_CLASS_NAMES = [
 YOLO_CONFIDENCE_THRESHOLD = 0.7 # Minimum confidence for a symbol detection to be COUNTED
 YOLO_PREDICT_CONF = 0.1         # Lower confidence for initial box detection (helps find full grid)
 STABLE_GRID_SIZE = 25           # Expected number of symbols in a full grid
-GRID_STABILITY_CHECKS = 3       # Number of consecutive checks needed for stable grid
-GRID_SEARCH_FRAME_INTERVAL = 2  # Process every N frames when searching for stable grid
+GRID_STABILITY_CHECKS = 1       # Number of consecutive checks needed for stable grid
+GRID_SEARCH_FRAME_INTERVAL = 1  # Process every N frames when searching for stable grid
+
+# --- Grid Retry Mechanism (NEW) ---
+ENABLE_GRID_RETRY = True       # Enable backtracking/re-processing if grid missed on state change
+GRID_RETRY_ATTEMPTS = 2          # Max number of times to re-process frames for a missed grid
+GRID_RETRY_FRAME_BUFFER_SIZE = 150 # Number of recent frames (or frame info) to keep for backtracking (adjust based on memory/round length)
+GRID_RETRY_PROCESS_ALL_FRAMES = True # If True, process every frame during retry, ignoring PROCESS_EVERY_N_FRAMES
+
 # We will use STAGES_AREA_ROI for symbol detection by default. Define a specific YOLO_ROI if needed.
 # YOLO_ROI = (x, y, w, h) # Optional: Define a separate ROI for YOLO if different from STAGES_AREA_ROI
 
 # --- Region of Interest (ROI) coordinates (x, y, width, height) ---
 # Define ROIs relative to the video frame dimensions
 # Format: (x, y, width, height)
-BALANCE_ROI = (98, 1753, 130, 52)
+BALANCE_ROI = (98, 1760, 130, 50)
 ROUND_ROI   = (1764, 1660, 78, 46)
 STAGES_AREA_ROI = (921, 1473, 1175, 190)
 # REMOVED Tesseract related lines
@@ -54,14 +61,14 @@ MODEL_IMG_WIDTH = 493
 PREDICTION_CONFIDENCE_THRESHOLD = 0.65 # 80% confidence required
 
 # --- Performance ---
-PROCESS_EVERY_N_FRAMES = 1
+PROCESS_EVERY_N_FRAMES = 2
 
 # --- Balance Correction ---
 DECIMAL_CORRECTION = 1 # Divide OCR balance by this value (e.g., 100)
 # Set to 1 or None if no correction is needed
 
 # --- Threading Configuration ---
-FRAME_QUEUE_MAXSIZE = 10
+FRAME_QUEUE_MAXSIZE = 20
 USE_PROCESSING_THREAD = True
 
 # --- Display Configuration ---

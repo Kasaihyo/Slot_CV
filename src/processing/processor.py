@@ -333,3 +333,143 @@ class FrameProcessor(threading.Thread):
             except queue.Full:
                  print("Warning: Results queue full when trying to signal processor end.")
         print("INFO: FrameProcessor thread finished.")
+
+    # --- NEW Method for Grid Retry --- #
+    def find_stable_grid_in_frames(self, frame_list):
+        """Processes a list of (frame_num, frame) tuples specifically to find a stable grid.
+
+        Args:
+            frame_list (list): A list of tuples, where each tuple is (frame_number, frame_image).
+
+        Returns:
+            dict: A dictionary containing stable grid data if found:
+                  {'stable_grid_found': True,
+                   'stable_grid_frame_num': frame_num,
+                   'total_symbols': count,
+                   'symbol_counts': {dict of counts}}
+                  Returns {'stable_grid_found': False} if not found or error occurs.
+        """
+        if not frame_list:
+            print("Retry Grid Search: Received empty frame list.")
+            return {'stable_grid_found': False}
+
+        if self.yolo_model is None:
+            print("Retry Grid Search: YOLO model not available.")
+            return {'stable_grid_found': False}
+
+        print(f"Retry Grid Search: Starting search on {len(frame_list)} frames (Range: {frame_list[0][0]} - {frame_list[-1][0]}) using interval {1 if cfg.GRID_RETRY_PROCESS_ALL_FRAMES else cfg.GRID_SEARCH_FRAME_INTERVAL}...")
+
+        # --- Temporary state for this search --- #
+        retry_state = ProcessingState.SEARCHING
+        retry_confirmation_count = 0
+        found_grid_data = {'stable_grid_found': False}
+        # --------------------------------------- #
+
+        process_interval = 1 if cfg.GRID_RETRY_PROCESS_ALL_FRAMES else cfg.GRID_SEARCH_FRAME_INTERVAL
+
+        for i, (frame_num, frame) in enumerate(frame_list):
+
+            # Skip frames based on interval if not processing all
+            if i % process_interval != 0:
+                continue
+
+            # === Perform YOLO detection and Stability Logic (adapted from run loop) ===
+            yolo_input_source = frame # Use the provided frame
+            is_grid_stable_this_frame = False
+            current_symbol_counts = {name: 0 for name in self.yolo_class_names}
+            current_total_symbols = 0
+            annotated_frame_for_log = None # Store the annotated frame if found
+
+            if yolo_input_source is not None and yolo_input_source.size > 0:
+                try:
+                    yolo_results = self.yolo_model.predict(
+                        source=yolo_input_source,
+                        conf=self.yolo_predict_conf, # Lower conf for finding grid
+                        verbose=False
+                    )
+
+                    num_detected_boxes = 0
+                    detected_boxes_obj = None
+                    if yolo_results and len(yolo_results) > 0:
+                        detected_boxes_obj = yolo_results[0].boxes
+                        if detected_boxes_obj is not None:
+                            num_detected_boxes = len(detected_boxes_obj)
+
+                    # --- Grid Stability State Machine (using retry_state) --- #
+                    if retry_state == ProcessingState.SEARCHING:
+                        if num_detected_boxes == cfg.STABLE_GRID_SIZE:
+                            retry_state = ProcessingState.CONFIRMING
+                            retry_confirmation_count = 1
+
+                    elif retry_state == ProcessingState.CONFIRMING:
+                        if num_detected_boxes == cfg.STABLE_GRID_SIZE:
+                            retry_confirmation_count += 1
+                            if retry_confirmation_count >= cfg.GRID_STABILITY_CHECKS:
+                                # --- STABLE GRID FOUND! --- #
+                                print(f"Retry Grid Search: Stable grid found at frame {frame_num}!")
+                                is_grid_stable_this_frame = True
+                                retry_state = ProcessingState.NORMAL # Exit state machine for this search
+
+                                # --- Perform Final Symbol Count --- #
+                                if detected_boxes_obj is not None and len(detected_boxes_obj) > 0:
+                                    indices = detected_boxes_obj.cls.int().tolist()
+                                    confidences = detected_boxes_obj.conf.tolist()
+                                    temp_counts_by_internal_name = Counter()
+                                    current_total = 0
+                                    for idx, conf in zip(indices, confidences):
+                                        if conf >= self.yolo_counting_threshold:
+                                            if 0 <= idx < len(YOLO_MODEL_INTERNAL_CLASS_ORDER):
+                                                internal_name = YOLO_MODEL_INTERNAL_CLASS_ORDER[idx]
+                                                temp_counts_by_internal_name[internal_name] += 1
+                                            # No else needed for warning here, main loop handles it
+                                        current_total += 1 # Count includes low confidence for total? Check run() logic.
+                                                         # Let's assume total is based on counted boxes for consistency.
+
+                                    # Recalculate total based *only* on counted symbols
+                                    current_total_symbols = sum(temp_counts_by_internal_name.values())
+
+                                    # Create final dict using config order
+                                    current_symbol_counts = {name: 0 for name in self.yolo_class_names}
+                                    for internal_name, count in temp_counts_by_internal_name.items():
+                                         if internal_name in current_symbol_counts:
+                                             current_symbol_counts[internal_name] = count
+
+                                    # Store results
+                                    found_grid_data = {
+                                        'stable_grid_found': True,
+                                        'stable_grid_frame_num': frame_num,
+                                        'total_symbols': current_total_symbols,
+                                        'symbol_counts': current_symbol_counts
+                                    }
+                                    # --- Optional: Annotate frame for debug/log --- #
+                                    # annotated_frame_for_log = yolo_input_source.copy()
+                                    # ... (drawing logic from run()) ...
+                                    # found_grid_data['annotated_frame'] = annotated_frame_for_log
+                                    # --------------------------------------------- #
+
+                                    # --- Exit loop once stable grid is found --- #
+                                    break # Found what we needed
+                                # ---------------------------------- #
+                        else:
+                            # Grid unstable during confirmation, reset
+                            retry_state = ProcessingState.SEARCHING
+                            retry_confirmation_count = 0
+
+                    # If state is NORMAL, we've found it, loop will break
+
+                except Exception as e:
+                    print(f"Retry Grid Search: Error during YOLO/Stability on frame {frame_num}: {e}")
+                    # Reset state on error within retry?
+                    retry_state = ProcessingState.SEARCHING
+                    retry_confirmation_count = 0
+                    # Continue searching subsequent frames in the list
+
+            # If loop finishes without break, stable grid wasn't found
+            if is_grid_stable_this_frame:
+                break # Exit outer loop too if grid found
+
+        if not found_grid_data['stable_grid_found']:
+            print(f"Retry Grid Search: Failed to find stable grid in frames {frame_list[0][0]} - {frame_list[-1][0]}.")
+
+        return found_grid_data
+    # ------------------------------- #

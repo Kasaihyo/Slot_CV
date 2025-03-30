@@ -247,35 +247,81 @@ def main():
                     round_changed, stage_changed_mid_round = game_state.update_from_result(result_data)
 
                     # --- Logging ---
-                    # Log stable grid event IF it occurred
-                    if result_data.get('grid_event') == 'stable':
-                        grid_log_data = log_manager.prepare_stable_grid_log(
-                            frame_num=frame_num,
-                            symbol_counts=result_data.get('symbol_counts', {}),
-                            total_symbols=result_data.get('total_symbols', 0),
-                            current_round=game_state.last_confirmed_round, # Add context
-                            current_stage=game_state.last_confirmed_stage  # Add context
-                        )
-                        log_manager.add_log_entry(data_log, grid_log_data)
-                        print(f"STABLE GRID >> F:{frame_num} Total:{grid_log_data['total_symbols']} R:'{grid_log_data['current_round']}' S:'{grid_log_data['current_stage']}'")
-
-                    # Log round change IF it occurred (separate from grid)
+                    # Log round change IF it occurred
                     if round_changed:
                         log_data = game_state.get_log_data(frame_num)
-                        entry = log_manager.add_log_entry(data_log, log_data)
-                        # Print confirmation
-                        balance_print = f"{log_data['confirmed_balance_val']:.2f}" if log_data['confirmed_balance_val'] is not None else f"(RAW:{log_data['raw_balance_text']})"
-                        print(f"ROUND CHANGE >> F:{frame_num} R:'{log_data['current_round']}' S:'{log_data['current_stage']}' "
-                              f"B:{balance_print} Change:{log_data['outcome_str']} Accum:{log_data['accumulated_win_val']:.2f}")
 
-                    # Log stage change IF it occurred (separate from grid)
+                        # --- Grid Retry Logic --- #
+                        if config.ENABLE_GRID_RETRY and not log_data.get('stable_grid_found'):
+                            print(f"INFO F{frame_num}: Round change detected, but stable grid missed. Initiating retry...")
+                            start_retry_frame, end_retry_frame = game_state.get_previous_state_frame_range('ROUND_CHANGE')
+                            if start_retry_frame is not None and end_retry_frame is not None:
+                                grid_found_on_retry = False
+                                for attempt in range(config.GRID_RETRY_ATTEMPTS):
+                                    print(f"  Retry Attempt {attempt + 1}/{config.GRID_RETRY_ATTEMPTS} for frames {start_retry_frame}-{end_retry_frame}")
+                                    # Get frames from buffer (requires reader_thread reference)
+                                    frames_to_retry = reader_thread.get_frames_from_buffer(start_retry_frame, end_retry_frame)
+                                    if frames_to_retry:
+                                        # Call processor method (requires processor_thread reference)
+                                        retry_result = processor_thread.find_stable_grid_in_frames(frames_to_retry)
+                                        if retry_result.get('stable_grid_found'):
+                                            print(f"  Retry SUCCESS: Found stable grid at frame {retry_result.get('stable_grid_frame_num')}")
+                                            # Update the original log_data with retry results
+                                            log_data.update(retry_result) # Overwrites grid flags/data
+                                            grid_found_on_retry = True
+                                            break # Exit retry loop
+                                    else:
+                                        print(f"  Retry Warning: Could not retrieve frames {start_retry_frame}-{end_retry_frame} from buffer for attempt {attempt + 1}.")
+                                        # Maybe break early if frames aren't available?
+                                        break
+                                if not grid_found_on_retry:
+                                    print(f"  Retry FAILED after {config.GRID_RETRY_ATTEMPTS} attempts.")
+                            else:
+                                print(f"Warning F{frame_num}: Could not determine frame range for grid retry on round change.")
+                        # --- End Grid Retry Logic --- #
+
+                        entry = log_manager.add_log_entry(data_log, log_data)
+                        # Updated print statement (already done in previous step)
+                        balance_print = f"{log_data['confirmed_balance_val']:.2f}" if log_data['confirmed_balance_val'] is not None else f"(RAW:{log_data['raw_balance_text']})"
+                        grid_info_print = f" Grid Symbols: {log_data.get('total_symbols')} (F:{log_data.get('stable_grid_frame_num')})" if log_data.get('stable_grid_found') else " Grid Missed"
+                        print(f"ROUND CHANGE >> F:{frame_num} R:'{log_data['current_round']}' S:'{log_data['current_stage']}' "
+                              f"B:{balance_print} Change:{log_data['outcome_str']} Accum:{log_data['accumulated_win_val']:.2f}{grid_info_print}")
+
+                    # Log stage change IF it occurred
                     elif stage_changed_mid_round:
                          log_data = game_state.get_log_data_stage_change(frame_num)
+
+                         # --- Grid Retry Logic --- #
+                         if config.ENABLE_GRID_RETRY and not log_data.get('stable_grid_found'):
+                            print(f"INFO F{frame_num}: Stage change detected mid-round, but stable grid missed. Initiating retry...")
+                            start_retry_frame, end_retry_frame = game_state.get_previous_state_frame_range('STAGE_CHANGE')
+                            if start_retry_frame is not None and end_retry_frame is not None:
+                                grid_found_on_retry = False
+                                for attempt in range(config.GRID_RETRY_ATTEMPTS):
+                                    print(f"  Retry Attempt {attempt + 1}/{config.GRID_RETRY_ATTEMPTS} for frames {start_retry_frame}-{end_retry_frame}")
+                                    frames_to_retry = reader_thread.get_frames_from_buffer(start_retry_frame, end_retry_frame)
+                                    if frames_to_retry:
+                                        retry_result = processor_thread.find_stable_grid_in_frames(frames_to_retry)
+                                        if retry_result.get('stable_grid_found'):
+                                            print(f"  Retry SUCCESS: Found stable grid at frame {retry_result.get('stable_grid_frame_num')}")
+                                            log_data.update(retry_result)
+                                            grid_found_on_retry = True
+                                            break
+                                    else:
+                                        print(f"  Retry Warning: Could not retrieve frames {start_retry_frame}-{end_retry_frame} from buffer for attempt {attempt + 1}.")
+                                        break
+                                if not grid_found_on_retry:
+                                    print(f"  Retry FAILED after {config.GRID_RETRY_ATTEMPTS} attempts.")
+                            else:
+                                print(f"Warning F{frame_num}: Could not determine frame range for grid retry on stage change.")
+                         # --- End Grid Retry Logic --- #
+
                          entry = log_manager.add_log_entry(data_log, log_data)
-                         # Print confirmation
+                         # Updated print statement (already done)
                          balance_print = f"{log_data['confirmed_balance_val']:.2f}" if log_data['confirmed_balance_val'] is not None else f"(RAW:{log_data['raw_balance_text']})"
+                         grid_info_print = f" Grid Symbols: {log_data.get('total_symbols')} (F:{log_data.get('stable_grid_frame_num')})" if log_data.get('stable_grid_found') else " Grid Missed"
                          print(f"STAGE CHANGE >> F:{frame_num} R:'{log_data['current_round']}' S:'{log_data['current_stage']}' "
-                               f"B:{balance_print} Change:0.00 Accum:{log_data['accumulated_win_val']:.2f}")
+                               f"B:{balance_print} Change:0.00 Accum:{log_data['accumulated_win_val']:.2f}{grid_info_print}")
 
             # --- Display Frame and Information ---
             if latest_display_frame is not None:

@@ -10,32 +10,11 @@ def initialize_log():
 
 def add_log_entry(data_log, log_data):
     """Appends a log entry dictionary (prepared by GameState) to the data_log list."""
-    # log_data dictionary already contains all necessary keys and values
-    # including frame_num, timestamp, round, stage, balance, outcome, symbols, etc.
+    # log_data dictionary now contains all necessary keys and values prepared by GameState
     data_log.append(log_data.copy()) # Append a copy to avoid modification issues
     return log_data # Return the added entry for potential immediate use
 
-# --- New function to prepare stable grid log ---
-def prepare_stable_grid_log(frame_num, symbol_counts, total_symbols, current_round, current_stage):
-    """Creates a dictionary specifically for logging a stable grid event."""
-    log_entry = {
-        'frame_num': frame_num,
-        'timestamp': datetime.datetime.now().isoformat(),
-        'EventType': 'STABLE_GRID',
-        'current_round': current_round, # Context
-        'current_stage': current_stage, # Context
-        'total_symbols': total_symbols
-        # Include other base columns with None or default values if desired for consistency
-        # 'confirmed_balance_val': None,
-        # 'balance_change_val': 0.0,
-        # 'outcome_str': 'GRID',
-        # 'accumulated_win_val': None,
-        # 'raw_balance_text': None
-    }
-    # Add individual symbol counts
-    log_entry.update({f'symbol_{name.replace(" ", "_")}': count for name, count in symbol_counts.items()})
-    return log_entry
-# ------------------------------------------
+# --- Removed prepare_stable_grid_log function ---
 
 def save_log_to_csv(data_log, filename):
     """Saves the collected log data to a CSV file."""
@@ -47,34 +26,49 @@ def save_log_to_csv(data_log, filename):
     df = pd.DataFrame(data_log)
 
     # Define desired column order dynamically
-    # Base columns (ensure keys match those created in GameState and prepare_stable_grid_log)
+    # Base columns (ensure keys match those created in GameState)
     base_cols = ['timestamp', 'frame_num', 'EventType', 'current_round', 'current_stage',
                  'confirmed_balance_val', 'balance_change_val', 'outcome_str',
-                 'accumulated_win_val', 'raw_balance_text']
+                 'accumulated_win_val', 'raw_balance_text',
+                 'stable_grid_found', 'stable_grid_frame_num'] # Added grid info columns
 
-    # Symbol columns
+    # Symbol columns (dynamic based on config)
     symbol_cols = [f'symbol_{name.replace(" ", "_")}' for name in config.YOLO_CLASS_NAMES]
     total_symbol_col = ['total_symbols']
 
     # Combine column order
-    cols_order = base_cols + total_symbol_col + symbol_cols
+    # Putting grid info near the event type, then symbols at the end
+    cols_order = ['timestamp', 'frame_num', 'EventType',
+                  'current_round', 'current_stage',
+                  'confirmed_balance_val', 'balance_change_val', 'outcome_str',
+                  'accumulated_win_val', 'raw_balance_text',
+                  'stable_grid_found', 'stable_grid_frame_num',
+                  'total_symbols'] + symbol_cols
 
     # Reindex DataFrame - this ensures all columns exist, filling missing ones with NaN
+    # If a log entry was missing a specific symbol (e.g., due to older config), it gets NaN here.
     df = df.reindex(columns=cols_order)
 
-    # --- Fill NaN values in specific columns ---
-    # Fill symbol counts with 0 for non-STABLE_GRID events
+    # --- Fill NaN/None values in specific columns ---
+    # Fill symbol counts with 0 where grid wasn't found or symbol wasn't present
+    # Note: GameState now puts None for total_symbols if grid_found is False
     fill_zeros = {'total_symbols': 0}
     fill_zeros.update({col: 0 for col in symbol_cols})
     df.fillna(fill_zeros, inplace=True)
-    # Optionally fill other columns if needed
-    # df.fillna({'BalanceChange': 0.0}, inplace=True)
+
+    # Fill NaN in stable_grid_frame_num with a placeholder (e.g., -1 or 0) if desired, or leave as NaN (becomes empty in CSV)
+    # df.fillna({'stable_grid_frame_num': -1}, inplace=True)
+
+    # Ensure boolean column is handled correctly (often becomes 1.0/0.0 or empty after reindex/fillna if original had Nones)
+    if 'stable_grid_found' in df.columns:
+         df['stable_grid_found'] = df['stable_grid_found'].fillna(False).astype(bool)
     # -----------------------------------------
 
     # Rename columns for better readability in CSV header
     column_rename_map = {
         'timestamp': 'Timestamp',
-        'frame_num': 'Frame',
+        'frame_num': 'EventFrame', # Renamed for clarity (frame event was logged)
+        'EventType': 'EventType',
         'current_round': 'RoundValue',
         'current_stage': 'Stage',
         'confirmed_balance_val': 'ConfirmedBalance',
@@ -82,9 +76,10 @@ def save_log_to_csv(data_log, filename):
         'outcome_str': 'Outcome',
         'accumulated_win_val': 'AccumulatedWin',
         'raw_balance_text': 'RawBalance',
-        'total_symbols': 'TotalSymbols',
-        'EventType': 'EventType' # Add rename for EventType
-        # Individual symbol columns already have a decent naming scheme (Symbol_Xxx_Yyy)
+        'stable_grid_found': 'StableGridFound',
+        'stable_grid_frame_num': 'StableGridFrame', # Frame where grid was stable
+        'total_symbols': 'TotalSymbols'
+        # Individual symbol columns already have Symbol_Xxx naming scheme
     }
     df.rename(columns=column_rename_map, inplace=True)
 
@@ -100,7 +95,13 @@ def save_log_to_csv(data_log, filename):
         pd.set_option('display.width', 1000)
         # Only print if dataframe is not empty
         if not df.empty:
-            print(df.tail(20)) # Print last 20 entries as a sample
+            # Select columns to display in summary (optional)
+            display_cols = [col for col in column_rename_map.values() if col in df.columns] # Show renamed columns
+            if 'TotalSymbols' in df.columns and df['TotalSymbols'].any(): # Add symbol cols only if any were found
+                 symbol_display_cols = [col for col in df.columns if col.startswith('symbol_')]
+                 display_cols.extend(symbol_display_cols)
+
+            print(df[display_cols].tail(20)) # Print last 20 entries
         else:
             print("(No data logged)")
         print("-" * 60)
