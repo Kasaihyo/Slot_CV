@@ -31,7 +31,8 @@ STAGES_AREA_ROI = (921, 1473, 1175, 190)
 # Tesseract config string (adjust for better accuracy)
 # --psm 7: Treat the image as a single text line
 # --psm 6: Assume a single uniform block of text
-TESSERACT_CONFIG = r'--oem 3 --psm 7 -c tessedit_char_whitelist=0123456789-'
+# TESSERACT_CONFIG = r'--oem 3 --psm 8 -c tessedit_char_whitelist=0123456789-.'
+TESSERACT_CONFIG = r'--oem 3 --psm 8 -l eng+fluxnum' # Use custom trained digits
 
 # --- Stability Control (Number of consecutive frames for confirmation) ---
 CONFIRMATION_FRAMES_OCR = 2 # For Round/Balance values
